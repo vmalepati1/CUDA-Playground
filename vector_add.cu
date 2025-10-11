@@ -31,6 +31,10 @@ int main() {
 
     int blockSize = 256;
     int numBlocks = (n + blockSize - 1) / blockSize;
+
+    std::cout << "Num blocks: " << numBlocks << std::endl;
+    std::cout << "Block size: " << blockSize << std::endl;
+
     vectorAdd<<<numBlocks, blockSize>>>(d_A, d_B, d_C, n);
 
     cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost);
