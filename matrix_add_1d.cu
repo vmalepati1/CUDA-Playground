@@ -2,21 +2,9 @@
 #include <iostream>
 
 __global__ void matrixAdd(float *A, float *B, float *C, int m, int n) {
-    // int blockNum = (blockIdx.x + blockIdx.y * gridDim.x);
-    // int firstBlockIdx = blockNum * (blockDim.x * blockDim.y);
-    // int threadIdxWithinBlock = threadIdx.x + threadIdx.y * blockDim.x;
+    int globalIndex = threadIdx.x + blockIdx.x * blockDim.x;
 
-    // int globalIndex = firstBlockIdx + threadIdxWithinBlock;
-
-    // if (globalIndex < m * n) {
-    //     C[globalIndex] = A[globalIndex] + B[globalIndex];
-    // }
-    int col = threadIdx.x + blockIdx.x * blockDim.x;
-    int row = threadIdx.y + blockIdx.y * blockDim.y;
-
-    if (row < m && col < n) {
-        int globalIndex = row * n + col;
-
+    if (globalIndex < m * n) {
         C[globalIndex] = A[globalIndex] + B[globalIndex];
     }
 }
@@ -52,14 +40,8 @@ int main() {
     cudaMemcpy(dA, hMA, totalMatrixBytes, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, hMB, totalMatrixBytes, cudaMemcpyHostToDevice);
 
-    int blockSizeCols = 32; // 32 threads for 32 columns
-    int blockSizeRows = 32; // 32 threads for 32 rows
-
-    int numBlocksInCol = (n + blockSizeCols - 1) / blockSizeCols;
-    int numBlocksInRow = (m + blockSizeRows - 1) / blockSizeRows;
-
-    dim3 blockSize(blockSizeCols, blockSizeRows);
-    dim3 numBlocks(numBlocksInCol, numBlocksInRow);
+    int blockSize = 256; // 256 threads
+    int numBlocks = (m * n + blockSize - 1) / blockSize;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
