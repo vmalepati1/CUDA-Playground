@@ -27,6 +27,8 @@ int main() {
     int n = 2048;
     int p = 2048;
 
+    std::cout << "Matrix size being multiplied: " << m << "x" << n << std::endl;
+
     float *hA = new float[m * n];
     float *hB = new float[n * p];
     float *hC = new float[m * p];
