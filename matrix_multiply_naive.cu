@@ -4,16 +4,21 @@
 #include <random>
 #include <iomanip>
 #include <math.h>
+#include <vector>
+#include <stdio.h>
 
 __global__ void matrixMultiply(float *A, float *B, float *C, int m, int n, int p) {
     int rowIdx = blockIdx.y * blockDim.y + threadIdx.y;
     int colIdx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (rowIdx < m && colIdx < p) {
+        // Where we are writing to within C (flattened index)
         int writeMatrixIdx = rowIdx * p + colIdx;
 
+        // Accumulated dot product
         float dotProduct = 0.0;
         
+        // Go through n cols in A and n rows in B to compute dot product
         for (int i = 0; i < n; i++) {
             dotProduct += A[rowIdx * n + i] * B[i * p + colIdx];
         }
@@ -22,12 +27,8 @@ __global__ void matrixMultiply(float *A, float *B, float *C, int m, int n, int p
     }
 }
 
-int main() {
-    int m = 2048;
-    int n = 2048;
-    int p = 2048;
-
-    std::cout << "Matrix size being multiplied: " << m << "x" << n << std::endl;
+float *compareKernelAndCUBLAS(int m, int n, int p) {
+    // std::cout << "Matrix result size: " << m << "x" << p << std::endl;
 
     float *hA = new float[m * n];
     float *hB = new float[n * p];
@@ -81,9 +82,9 @@ int main() {
     cudaEventRecord(end);
     cudaEventSynchronize(end);
 
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, end);
-    std::cout << "Kernel time: " << milliseconds << " ms" << std::endl;  
+    float kernelMilliseconds = 0;
+    cudaEventElapsedTime(&kernelMilliseconds, start, end);
+    // std::cout << "Kernel time: " << kernelMilliseconds << " ms" << std::endl;  
 
     cudaMemcpy(hC, dC, m * p * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -105,8 +106,9 @@ int main() {
     cudaEventRecord(end);
     cudaEventSynchronize(end);
 
-    cudaEventElapsedTime(&milliseconds, start, end);
-    std::cout << "cuBLAS time: " << milliseconds << " ms" << std::endl;  
+    float cublasMilliseconds;
+    cudaEventElapsedTime(&cublasMilliseconds, start, end);
+    // std::cout << "cuBLAS time: " << cublasMilliseconds << " ms" << std::endl;  
 
     cudaMemcpy(hCRef, dC, m * p * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -142,6 +144,36 @@ int main() {
     delete[] hB;
     delete[] hC;
     delete[] hCRef;
+
+    return new float[2]{kernelMilliseconds, cublasMilliseconds};
+}
+
+int main() {
+    /* Run the kernel for each problem size (i.e. square matrix size) and see how much time
+       the matrix multiplication takes. Then compute GFLOPS at each problem size.
+    */
+
+    FILE *fptr;
+
+    fptr = fopen("data/NaiveMatrixMultVsCuBLAS_GFLOPS.csv", "w");
+
+    fprintf(fptr, "Matrix Size, Kernel GFLOPS, cuBLAS GFLOPS\n");
+
+    for (int problemSize = 32; problemSize <= 2048; problemSize *= 2) {
+        float *runtimes = compareKernelAndCUBLAS(problemSize, problemSize, problemSize);
+
+        double naiveMilliseconds = runtimes[0];
+        double cublasMilliseconds = runtimes[1];
+
+        double kernelGFLOPS = (2.0 * problemSize * problemSize * problemSize) / (naiveMilliseconds / 1000.0) / 1e9;
+        double cublasGFLOPS = (2.0 * problemSize * problemSize * problemSize) / (cublasMilliseconds / 1000.0) / 1e9;
+
+        fprintf(fptr, "%d, %.3f, %.3f\n", problemSize, kernelGFLOPS, cublasGFLOPS);
+
+        delete[] runtimes;
+    }
+
+    fclose(fptr);
 
     system("pause");
     return 0;
