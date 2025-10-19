@@ -5,36 +5,42 @@
 
 #define TILE_SIZE 32
 
-__global__ void matrixMultiplyTiled(float *A, float *B, float *C, int m, int n, int p) {
-    __shared__ float tileA[TILE_SIZE * TILE_SIZE];
-    __shared__ float tileB[TILE_SIZE * TILE_SIZE];
+__global__ void matrixMultiplyTiled(const float *__restrict__ A, const float *__restrict__ B, float *__restrict__ C, int m, int n, int p) {
+    __shared__ float tileA[TILE_SIZE][TILE_SIZE];
+    __shared__ float tileB[TILE_SIZE][TILE_SIZE];
 
     float dotProduct = 0.0;
 
     for (int phase = 0; phase < (n + TILE_SIZE - 1) / TILE_SIZE; phase++) {
+        // Current indices we are looking at within A for this tile which will be loaded into shared memory
         int rowInA = blockIdx.y * TILE_SIZE + threadIdx.y;
         int colInA = phase * TILE_SIZE + threadIdx.x;
 
+        // Current indices we are looking at within B for this tile which will be loaded into shared memory
         int rowInB = phase * TILE_SIZE + threadIdx.y;
         int colInB = blockIdx.x * TILE_SIZE + threadIdx.x;
 
+        // Directly map indices within block to shared tile indices
         int rowTile = threadIdx.y;
         int colTile = threadIdx.x;
 
+        // Load shared memory with respective data from A and B
         if (rowInA < m && colInA < n) {
-            tileA[rowTile * TILE_SIZE + colTile] = A[rowInA * n + colInA];
+            tileA[rowTile][colTile] = A[rowInA * n + colInA];
         } else {
-            tileA[rowTile * TILE_SIZE + colTile] = 0.0f;
+            tileA[rowTile][colTile] = 0.0f;
         }
 
         if (rowInB < n && colInB < p) {
-            tileB[rowTile * TILE_SIZE + colTile] = B[rowInB * p + colInB];
+            tileB[rowTile][colTile] = B[rowInB * p + colInB];
         } else {
-            tileB[rowTile * TILE_SIZE + colTile] = 0.0f;
+            tileB[rowTile][colTile] = 0.0f;
         }
 
+        // Wait for all shared memory to be filled out by all threads
         __syncthreads();
 
+        // Compute partial dot product for each tile index
         for (int i = 0; i < TILE_SIZE; i++) {
             int tileARow = threadIdx.y;
             int tileACol = i;
@@ -42,12 +48,15 @@ __global__ void matrixMultiplyTiled(float *A, float *B, float *C, int m, int n, 
             int tileBRow = i;
             int tileBCol = threadIdx.x;
 
-            dotProduct += tileA[tileARow * TILE_SIZE + tileACol] * tileB[tileBRow * TILE_SIZE + tileBCol];
+            dotProduct += tileA[tileARow][tileACol] * tileB[tileBRow][tileBCol];
         }
 
+        // Wait for all partial dot products for all threads to be computed and done using the
+        // shared memory before updating shared memory
         __syncthreads();
     }
 
+    // Write out full dot product
     int cRow = blockIdx.y * blockDim.y + threadIdx.y;
     int cCol = blockIdx.x * blockDim.x + threadIdx.x;
 
